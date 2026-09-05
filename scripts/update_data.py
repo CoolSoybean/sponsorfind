@@ -2,6 +2,7 @@
 import argparse
 import csv
 import hashlib
+import gzip
 import io
 import json
 import re
@@ -92,7 +93,7 @@ def main():
     if len(records)<args.min_records: raise ValueError(f'Only {len(records)} records; publication stopped')
     old=previous.get('count',0)
     if old and abs(len(records)-old)/old > .2 and not args.allow_large_change: raise ValueError('Record count changed by more than 20%; review before publishing')
-    version=hashlib.sha256(json.dumps(records,ensure_ascii=False).encode()).hexdigest()[:16]
+    version=hashlib.sha256(('fast-v2:'+json.dumps(records,ensure_ascii=False)).encode()).hexdigest()[:16]
     staging=ROOT/'work'/f'build-{version}'
     staging.mkdir(parents=True,exist_ok=True)
     groups={letter:[] for letter in list('abcdefghijklmnopqrstuvwxyz')+['0-9','other']}
@@ -101,23 +102,36 @@ def main():
     lookup={key:{value:i for i,value in enumerate(values)} for key,values in dictionaries.items()}
     packed={'format':1,'dictionaries':dictionaries,'rows':[[r['id'],r['name']]+[lookup[k][r[k]] for k in ['town','county','route','rating','shard']] for r in records]}
     write_json(staging/'index.json',packed)
+    (staging/'index.json.gz').write_bytes(gzip.compress((staging/'index.json').read_bytes(),mtime=0))
+    options={key:sorted((v for v in dictionaries[key] if v),key=str.casefold) for key in ['town','county','route','rating']}
+    write_json(staging/'bootstrap.json',{'options':options,'rows':records[:20]})
+    for start in range(0,len(records),200):
+        write_json(staging/'browse'/f'{start//200}.json',records[start:start+200])
     shards={}
     base=f'/data/versions/{version}'
     for letter,rows in groups.items():
         write_json(staging/f'{letter}.json',rows)
-        shards[letter]={'url':f'{base}/{letter}.json','count':len(rows)}
+        (staging/f'{letter}.json.gz').write_bytes(gzip.compress((staging/f'{letter}.json').read_bytes(),mtime=0))
+        shards[letter]={'url':f'{base}/{letter}.json','gzip':f'{base}/{letter}.json.gz','count':len(rows)}
     if sum(x['count'] for x in shards.values())!=len(records): raise ValueError('Shard count mismatch')
-    for file in staging.glob('*.json'):
-        if file.stat().st_size >= 25*1024*1024: raise ValueError(f'{file.name} exceeds static asset size limit')
+    for file in staging.rglob('*'):
+        if file.is_file() and file.stat().st_size >= 25*1024*1024: raise ValueError(f'{file.name} exceeds static asset size limit')
     target=data/'versions'/version
     if target.exists():
-        for file in staging.glob('*.json'):
-            if not (target/file.name).exists() or file.read_bytes()!=(target/file.name).read_bytes(): raise ValueError('Immutable version content differs')
+        for file in staging.rglob('*'):
+            if file.is_file() and (not (target/file.relative_to(staging)).exists() or file.read_bytes()!=(target/file.relative_to(staging)).read_bytes()): raise ValueError('Immutable version content differs')
     else: shutil.copytree(staging,target)
-    manifest={'version':version,'source':SOURCE,'csv_source':csv_url,'source_updated':updated,'checked_at':datetime.now(timezone.utc).isoformat(),'count':len(records),'count_unit':'licence_records','index':f'{base}/index.json','shards':shards}
+    manifest={'version':version,'source':SOURCE,'csv_source':csv_url,'source_updated':updated,'checked_at':datetime.now(timezone.utc).isoformat(),'count':len(records),'count_unit':'licence_records','index':f'{base}/index.json','index_gzip':f'{base}/index.json.gz','bootstrap':f'{base}/bootstrap.json','browse':f'{base}/browse/','shards':shards}
     # Replace manifest last. Hosting deployment is only invoked after this command succeeds.
     write_json(data/'manifest.next.json',manifest)
     (data/'manifest.next.json').replace(data/'manifest.json')
+    # Bound generated-version retention so daily builds stay within asset quotas.
+    versions_root=(data/'versions').resolve()
+    old_versions=sorted((p for p in versions_root.iterdir() if p.is_dir() and p.name!=version),key=lambda p:p.stat().st_mtime,reverse=True)
+    for stale in old_versions[6:]:
+        resolved=stale.resolve()
+        if resolved.parent!=versions_root or not re.fullmatch(r'[0-9a-f]{16}',resolved.name): raise ValueError('Unsafe generated version path')
+        shutil.rmtree(resolved)
     report={'count':len(records),'duplicates_removed':duplicates,'version':version,'index_bytes':(target/'index.json').stat().st_size}
     write_json(ROOT/'work/quality-report.json',report)
     print(json.dumps(report))
