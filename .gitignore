@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.wrangler/
+work/
+__pycache__/
+.env*
+public/data/

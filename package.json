@@ -1,0 +1,21 @@
+{
+  "name": "sponsorfind",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "node scripts/verify_data.mjs && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node --test tests/search.test.js",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "vite": "6.3.6",
+    "wrangler": "4.40.0"
+  }
+}
