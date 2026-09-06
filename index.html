@@ -16,5 +16,21 @@
       window.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
     };
     document.body.appendChild(widget);
+
+    var paymentUrl = 'https://buymeacoffee.com/0xkaiiak';
+    var popupOptions = 'popup,width=460,height=760,resizable=yes,scrollbars=yes';
+    var attachPopup = function () {
+      var button = document.getElementById('bmc-wbtn');
+      if (!button || button.dataset.directPayment === 'true') return;
+      button.dataset.directPayment = 'true';
+      button.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        var mobile = window.matchMedia('(max-width: 700px)').matches;
+        window.open(paymentUrl, 'bmc-payment', mobile ? '_blank' : popupOptions);
+      }, true);
+    };
+    new MutationObserver(attachPopup).observe(document.body, { childList: true, subtree: true });
+    attachPopup();
   }());
 </script></body></html>
