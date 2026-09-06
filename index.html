@@ -12,6 +12,9 @@
     widget.dataset.position = 'Right';
     widget.dataset.x_margin = mobile ? '12' : '18';
     widget.dataset.y_margin = mobile ? '12' : '18';
+    widget.onload = function () {
+      window.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true }));
+    };
     document.body.appendChild(widget);
   }());
 </script></body></html>
